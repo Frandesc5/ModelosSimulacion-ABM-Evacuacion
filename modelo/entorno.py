@@ -129,6 +129,25 @@ class Entorno:
             representando ausencia de flujo. El resultado se limita
             al intervalo [0, 1]. No se modela un incendio físico real.
         """
+
+        
+        actual_humo = np.copy(self.humo)
+        if self.configuracion.usar_humo:
+            for y in range(self.alto):
+                for x in range(self.ancho):
+                    if not self.paredes[y, x]:
+                        vecinos = []
+                        for dy, dx in VECINOS:
+                            ny, nx = y + dy, x + dx
+                            if self.dentro(nx, ny) and not self.paredes[ny, nx]:
+                                vecinos.append(actual_humo[ny, nx])
+                            else:
+                                vecinos.append(actual_humo[y, x])  # Sin flujo a través de paredes
+                        promedio_vecinos = np.mean(vecinos)
+                        H_nueva = actual_humo[y, x] + self.configuracion.difusion_humo * (promedio_vecinos - actual_humo[y, x]) - self.configuracion.decaimiento_humo * actual_humo[y, x]
+                        if (x, y) in self.fuentes:
+                            H_nueva += 1.0  # Aporte de fuente
+                        self.humo[y, x] = np.clip(H_nueva, 0.0, 1.0)
         # TODO: Cuando usar_humo es False, no se modifica el entorno.
         # Usar una matriz nueva; todas las celdas leen el humo anterior.
         # Para cada celda que no sea pared:
@@ -136,7 +155,6 @@ class Entorno:
         #   - Calcular difusión y decaimiento.
         # Incorporar el aporte de las cuatro fuentes.
         # Limitar los valores finales al intervalo [0, 1].
-        raise NotImplementedError("Completar actualizar_humo")
 
     def calcular_distancias(self):
         """Calcula mediante BFS las distancias mínimas a las salidas.
@@ -153,10 +171,18 @@ class Entorno:
             pero no la ocupación de los agentes. El método no modifica
             el entorno y se ejecuta nuevamente en cada paso.
         """
-        # TODO: Crear una matriz de distancias inicialmente igual a -1.
-        # Iniciar una cola FIFO con las cuatro celdas de salida (distancia 0).
-        # Recorrer con BFS las celdas transitables todavía no visitadas.
-        # Las distancias representan movimientos ortogonales mínimos.
-        # No considerar la ocupación de personas al calcular BFS.
-        raise NotImplementedError("Completar calcular_distancias")
+        distancias = np.full((self.alto, self.ancho), -1, dtype=int)
+        cola = deque()
+        for x, y in self.salidas:
+            distancias[y, x] = 0
+            cola.append((x, y))
+        while cola:
+            x, y = cola.popleft()
+            for dx, dy in VECINOS:
+                vx, vy = x + dx, y + dy
+                # Solo se expanden celdas transitables todavía no visitadas.
+                if self.es_transitable(vx, vy) and distancias[vy, vx] == -1:
+                    distancias[vy, vx] = distancias[y, x] + 1
+                    cola.append((vx, vy))
+        return distancias
 

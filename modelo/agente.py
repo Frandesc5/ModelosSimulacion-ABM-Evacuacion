@@ -62,9 +62,9 @@ class Agente:
             destinos libres o el agente puede perder un conflicto.
             Este método no modifica su posición.
         """
-        # TODO: Un agente que ya evacuó no vuelve a activarse.
-        # Para los demás, sortear la activación según su probabilidad.
-        raise NotImplementedError("Completar esta_habilitado")
+        if self.evacuado:
+            return False  # Ya evacuó: no vuelve a activarse ni consume sorteo.
+        return bool(aleatorio.random() < self.probabilidad_activacion)
 
     def _seleccionar_mejor_opcion(self, opciones, aleatorio):
         """Selecciona el destino preferido entre candidatos ya filtrados.
@@ -88,10 +88,11 @@ class Agente:
             Concentraciones que difieren menos de 1e-10 se consideran
             equivalentes. No se modifica la posición del agente.
         """
-        # TODO: Elegir primero las opciones de menor distancia BFS.
-        # Si hay empate, priorizar la menor concentración de humo.
-        # Si persiste el empate, sortear uniformemente una opción.
-        raise NotImplementedError("Completar _seleccionar_mejor_opcion")
+        distancia_minima = min(distancia for distancia, _, _ in opciones)
+        candidatos = [opcion for opcion in opciones if opcion[0] == distancia_minima]
+        humo_minimo = min(humo for _, humo, _ in candidatos)
+        candidatos = [opcion for opcion in candidatos if opcion[1] - humo_minimo < 1e-10]
+        return candidatos[aleatorio.integers(len(candidatos))][2]
 
     def elegir_destino(self, entorno, ocupadas, distancias, salidas_utilizadas, aleatorio):
         """Propone una celda vecina como destino, sin mover al agente.
@@ -131,15 +132,32 @@ class Agente:
 
             La clase Simulacion decide si acepta la propuesta.
         """
-        # TODO: Obtener los cuatro vecinos ortogonales de la posición.
-        # Descartar celdas no transitables, ocupadas, sin ruta BFS
-        # o salidas que ya hayan sido utilizadas en este paso.
-        # Si es posible, elegir una opción que reduzca la distancia BFS.
-        # Si no hay avance, decidir si se intenta un desvío.
-        # Si la posición actual se bloqueó por humo, intentar salir
-        # a una celda segura con ruta disponible.
-        # IMPORTANTE: este método PROPONE un destino, no lo ejecuta.
-        raise NotImplementedError("Completar elegir_destino")
+        opciones = []
+        for dx, dy in VECINOS:
+            vecino = (self.x + dx, self.y + dy)
+            if not entorno.es_transitable(*vecino):
+                continue
+            if vecino in ocupadas or vecino in salidas_utilizadas:
+                continue
+            distancia = distancias[vecino[1], vecino[0]]
+            if distancia < 0:
+                continue  # Sin ruta hacia una salida.
+            opciones.append((int(distancia), float(entorno.humo[vecino[1], vecino[0]]), vecino))
+        if not opciones:
+            return None
+
+        distancia_actual = distancias[self.y, self.x]
+        if distancia_actual < 0:
+            # La celda actual quedó bloqueada: salir hacia un vecino con ruta.
+            return self._seleccionar_mejor_opcion(opciones, aleatorio)
+
+        avances = [opcion for opcion in opciones if opcion[0] < distancia_actual]
+        if avances:
+            return self._seleccionar_mejor_opcion(avances, aleatorio)
+
+        if aleatorio.random() < entorno.configuracion.probabilidad_desvio:
+            return self._seleccionar_mejor_opcion(opciones, aleatorio)
+        return None
 
     def mover(self, nueva_posicion):
         """Ejecuta un movimiento ya aceptado por la simulación.
